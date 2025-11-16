@@ -1,0 +1,15 @@
+[package]
+name = "phoenix"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ahash = "0.8.12"
+anyhow = "1.0.100"
+bytemuck = { version = "1.24.0", default-features = false, features = ["derive"] }
+clap = { version = "4.5.51", features = ["derive"] }
+rand = "0.9.2"
+rustc-hash = "2.1.1"
+tracing = "0.1.41"
+tracing-appender = "0.2.3"
+tracing-subscriber = "0.3.20"
