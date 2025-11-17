@@ -133,7 +133,7 @@ struct UniquePages<'a> {
 impl<'a> UniquePages<'a> {
     pub fn new(pages: &'a [AlignedPage]) -> Self {
         let mut unique_indices = Vec::new();
-        let mut unique_pages = AHashMap::<&AlignedPage, PageIndex>::default();
+        let mut unique_pages = AHashMap::<&AlignedPage, PageIndex>::with_capacity(pages.len());
         for (page_index, page) in pages.iter().enumerate() {
             if page.is_zero() {
                 continue;
@@ -221,7 +221,11 @@ struct SampledMultiHashMap<'a> {
 impl<'a> SampledMultiHashMap<'a> {
     pub fn new(rng: &mut impl Rng, pages: &'a UniquePages<'a>) -> Self {
         let indices = from_fn(|_| from_fn(|_| rng.random_range(0..PAGE_SIZE as ByteIndex)));
-        let mut maps = <[SampledHashMap; _]>::default();
+        let mut maps = from_fn(|_| {
+            let mut map = SampledHashMap::default();
+            map.reserve(pages.unique_indices.len());
+            map
+        });
 
         for (page_index, page) in pages.enumerate() {
             for (sampler, map) in zip(indices, &mut maps) {
