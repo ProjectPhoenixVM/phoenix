@@ -725,9 +725,6 @@ fn compress(args: PhoenixCompressArgs) -> anyhow::Result<()> {
 }
 
 fn decompress(args: PhoenixDecompressArgs) -> anyhow::Result<()> {
-    #[cfg(target_arch = "x86_64")]
-    use core::arch::x86_64::_rdtsc;
-
     let span = tracing::info_span!("diff_reading");
     let _guard = span.enter();
 
@@ -750,26 +747,17 @@ fn decompress(args: PhoenixDecompressArgs) -> anyhow::Result<()> {
     let span = tracing::info_span!("child_reconstruction");
     let _guard = span.enter();
 
-    let mut times = vec![0; diff.num_pages() as _];
     let mut child = Vec::with_capacity(diff.num_pages() as _);
     let mut tmp_buf = AlignedPage::default();
     for i in 0..diff.num_pages() {
-        let start = unsafe { _rdtsc() };
         let child_page = diff
             .get_page(&parent, i, &mut tmp_buf)
             .expect("Pages 0..num_pages should exist");
         child.push(*child_page);
-        let end = unsafe { _rdtsc() };
-        let diff = end - start;
-        times[i as usize] = diff;
     }
 
     drop(_guard);
     drop(span);
-
-    for v in times {
-        eprintln!("{v}");
-    }
 
     let span = tracing::info_span!("child_writing");
     let _guard = span.enter();
