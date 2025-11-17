@@ -114,7 +114,7 @@ const PAGES_PER_HASH: usize = 4;
 type PageIndex = u32;
 const ZERO_PAGE_INDEX: PageIndex = 0xC000_0000;
 const PAGE_FLAG_MASK: PageIndex = 0xC000_0000;
-const PARENT_PAGE_FLAG: PageIndex = 0x0000_000;
+const PARENT_PAGE_FLAG: PageIndex = 0x0000_0000;
 const DIFF_PAGE_FLAG: PageIndex = 0x4000_0000;
 const FULL_PAGE_FLAG: PageIndex = 0x8000_0000;
 const MAX_PAGE_INDEX: PageIndex = 0x3FFF_FFFF;
@@ -134,7 +134,7 @@ impl<'a> UniquePages<'a> {
     pub fn new(pages: &'a [AlignedPage]) -> Self {
         let mut unique_indices = Vec::new();
         let mut unique_pages = AHashMap::<&AlignedPage, PageIndex>::default();
-        for (page_index, page) in pages.into_iter().enumerate() {
+        for (page_index, page) in pages.iter().enumerate() {
             if page.is_zero() {
                 continue;
             }
@@ -346,7 +346,6 @@ impl CompressedDiffs {
         Ok(())
     }
 
-    #[must_use]
     pub fn read(mut reader: impl Read) -> io::Result<Self> {
         let num_metadata = u32::from_be_bytes(read_const(&mut reader)?);
         let num_high_bits = u16::from_be_bytes(read_const(&mut reader)?);
@@ -466,7 +465,6 @@ impl CompressedPages {
         Ok(())
     }
 
-    #[must_use]
     pub fn read(mut reader: impl Read) -> io::Result<Self> {
         let num_metadata = u32::from_be_bytes(read_const(&mut reader)?);
         let num_high_bits = u32::from_be_bytes(read_const(&mut reader)?);
@@ -586,7 +584,7 @@ impl MemoryDiff {
             decompress_page(diff.method, diff.data, tmp_buf)
                 .expect("Decompression should not fail");
             let base_page = parent.get(diff.base_page as usize)?;
-            *tmp_buf = page_xor(base_page, &tmp_buf);
+            *tmp_buf = page_xor(base_page, tmp_buf);
 
             return Some(&*tmp_buf);
         }
@@ -603,7 +601,6 @@ impl MemoryDiff {
         Ok(())
     }
 
-    #[must_use]
     pub fn read(mut reader: impl Read) -> io::Result<Self> {
         let num_pages = u32::from_be_bytes(read_const(&mut reader)?);
         let mut base_pages = Vec::with_capacity(num_pages as usize);
@@ -694,7 +691,7 @@ fn compress(args: PhoenixCompressArgs) -> anyhow::Result<()> {
 
             let mut compressed_delta_buf = ZERO_PAGE;
             let compressed_diff = compress_page(&xor, &mut compressed_delta_buf.0);
-            if compressed_diff.len() < nonzero_bytes - 4 {}
+
             diff.push_diff_page(
                 best_match,
                 compressed_diff.method,
@@ -704,7 +701,7 @@ fn compress(args: PhoenixCompressArgs) -> anyhow::Result<()> {
         }
 
         let mut compressed_buf = ZERO_PAGE;
-        let compressed_page = compress_page(&page, &mut compressed_buf.0);
+        let compressed_page = compress_page(page, &mut compressed_buf.0);
 
         diff.push_full_page(
             compressed_page.method,
@@ -715,7 +712,7 @@ fn compress(args: PhoenixCompressArgs) -> anyhow::Result<()> {
     drop(_guard);
     drop(span);
 
-    let span = tracing::info_span!("outputting");
+    let span = tracing::info_span!("diff_writing");
     let _guard = span.enter();
 
     let mut output = BufWriter::new(File::create(args.output)?);
@@ -728,6 +725,9 @@ fn compress(args: PhoenixCompressArgs) -> anyhow::Result<()> {
 }
 
 fn decompress(args: PhoenixDecompressArgs) -> anyhow::Result<()> {
+    #[cfg(target_arch = "x86_64")]
+    use core::arch::x86_64::_rdtsc;
+
     let span = tracing::info_span!("diff_reading");
     let _guard = span.enter();
 
@@ -750,17 +750,26 @@ fn decompress(args: PhoenixDecompressArgs) -> anyhow::Result<()> {
     let span = tracing::info_span!("child_reconstruction");
     let _guard = span.enter();
 
+    let mut times = vec![0; diff.num_pages() as _];
     let mut child = Vec::with_capacity(diff.num_pages() as _);
     let mut tmp_buf = AlignedPage::default();
     for i in 0..diff.num_pages() {
+        let start = unsafe { _rdtsc() };
         let child_page = diff
             .get_page(&parent, i, &mut tmp_buf)
             .expect("Pages 0..num_pages should exist");
         child.push(*child_page);
+        let end = unsafe { _rdtsc() };
+        let diff = end - start;
+        times[i as usize] = diff;
     }
 
     drop(_guard);
     drop(span);
+
+    for v in times {
+        eprintln!("{v}");
+    }
 
     let span = tracing::info_span!("child_writing");
     let _guard = span.enter();

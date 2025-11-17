@@ -67,13 +67,13 @@ impl BytePlacement {
             .ok_or("Not enough output space")?;
         let (chunks, tail) = xor.as_chunks::<CHUNK_SIZE>();
         for chunk in chunks {
-            let num_nonzero = chunk.into_iter().filter(|b| **b != 0).count();
+            let num_nonzero = chunk.iter().filter(|b| **b != 0).count();
             if num_nonzero == 0 {
                 write(&mut head, &[0])?;
                 write(&mut output, &[0, 0])?;
             } else {
                 write(&mut head, &[(num_nonzero - 1) as u8])?;
-                for (pos, &byte) in chunk.into_iter().enumerate() {
+                for (pos, &byte) in chunk.iter().enumerate() {
                     if byte != 0 {
                         write(&mut output, &[pos as u8, byte])?;
                     }
@@ -81,7 +81,7 @@ impl BytePlacement {
             }
         }
         if !tail.is_empty() {
-            let tail_num_nonzero = tail.into_iter().filter(|b| **b != 0).count();
+            let tail_num_nonzero = tail.iter().filter(|b| **b != 0).count();
             if tail_num_nonzero == 0 {
                 write(&mut head, &[0])?;
                 write(&mut output, &[0, 0])?;
@@ -106,7 +106,7 @@ impl BytePlacement {
         let num_chunks = output.len().div_ceil(CHUNK_SIZE);
         let header = input.split_off(..num_chunks).ok_or("Not enough input")?;
         let (chunks, tail) = output.as_chunks_mut::<CHUNK_SIZE>();
-        for (chunk, num_nonzero) in chunks.into_iter().zip(header.into_iter()) {
+        for (chunk, num_nonzero) in chunks.iter_mut().zip(header.iter()) {
             let num_nonzero = *num_nonzero as usize + 1;
             if input.len() < num_nonzero * 2 {
                 return Err("Input data is cut short");
@@ -145,7 +145,7 @@ impl RunLength {
 
         let mut last = xor[0];
         let mut count = 1u8;
-        for byte in (&xor[1..]).into_iter().copied() {
+        for byte in xor[1..].iter().copied() {
             if byte == last {
                 if count == 255 {
                     write(&mut output, &[byte, count])?;
@@ -174,7 +174,7 @@ impl RunLength {
                 .split_off_mut(..count)
                 .ok_or("Ran out of output buffer")?;
             buf.fill(data);
-            if output.len() == 0 {
+            if output.is_empty() {
                 return Ok(());
             }
         }
@@ -196,9 +196,9 @@ impl ZeroLength {
     #[inline]
     fn compress<'a>(xor: &[u8], full_output: &'a mut [u8]) -> Result<&'a [u8]> {
         let mut output = &mut full_output[..];
-        let mut input = &xor[..];
+        let mut input = xor;
 
-        while input.len() > 0 {
+        while !input.is_empty() {
             let num_zeros = input
                 .iter()
                 .position(|e| *e != 0)
@@ -207,12 +207,12 @@ impl ZeroLength {
             input = &input[num_zeros as usize..];
             let num_data = input
                 .windows(2)
-                .position(|e| e == &[0, 0])
+                .position(|e| e == [0, 0])
                 .unwrap_or(input.len())
                 .min(u8::MAX as usize) as u8;
             let (data, rem) = input.split_at(num_data as usize);
             input = rem;
-            if input.len() == 0 && num_data == 0 {
+            if input.is_empty() && num_data == 0 {
                 write(&mut output, &[num_zeros])?;
                 break;
             }
@@ -234,7 +234,7 @@ impl ZeroLength {
                 .split_off_mut(..num_zeros as usize)
                 .ok_or("Input decompressed exceeds output buffer")?;
             zeros.fill(0);
-            if output.len() == 0 {
+            if output.is_empty() {
                 return Ok(());
             }
 
@@ -243,7 +243,7 @@ impl ZeroLength {
                 read(input, data_len as usize).map_err(|_| "Final segment exceeds input buffer")?;
             write(&mut output, data)?;
 
-            if output.len() == 0 {
+            if output.is_empty() {
                 return Ok(());
             }
         }
@@ -309,13 +309,13 @@ impl<'a> PatternArray<'a> {
         }
         let num_patterns = patterns.len() as u8;
         write(&mut output, &[num_patterns])?;
-        write(&mut output, bytemuck::cast_slice(&patterns))?;
+        write(&mut output, bytemuck::cast_slice(patterns))?;
 
         if output.len() < xor_chunks.len() {
             return Err("Not enough output space");
         }
         for (i, pattern) in xor_chunks
-            .into_iter()
+            .iter()
             .copied()
             .map(u64::from_ne_bytes)
             .enumerate()
@@ -346,7 +346,7 @@ impl<'a> PatternArray<'a> {
         patterns[1..num_patterns as usize + 1].copy_from_slice(pattern_data);
 
         let data = read(input, output_chunks.len())?;
-        for (byte, out) in data.into_iter().zip(output_chunks) {
+        for (byte, out) in data.iter().zip(output_chunks) {
             out.copy_from_slice(&patterns[*byte as usize]);
         }
 
