@@ -206,8 +206,8 @@ impl ZeroLength {
                 .min(u8::MAX as usize) as u8;
             input = &input[num_zeros as usize..];
             let num_data = input
-                .iter()
-                .position(|e| *e == 0)
+                .windows(2)
+                .position(|e| e == &[0, 0])
                 .unwrap_or(input.len())
                 .min(u8::MAX as usize) as u8;
             let (data, rem) = input.split_at(num_data as usize);

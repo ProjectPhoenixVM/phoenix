@@ -240,7 +240,7 @@ impl<'a> SampledMultiHashMap<'a> {
         }
     }
 
-    pub fn best_match(&self, page: &AlignedPage) -> Option<PageIndex> {
+    pub fn best_match(&self, page: &AlignedPage) -> Option<(usize, PageIndex)> {
         let mut best_diff = PAGE_SIZE;
         let mut best_index = FULL_PAGE_FLAG;
         for (sampler, map) in zip(self.indices, &self.maps) {
@@ -256,7 +256,7 @@ impl<'a> SampledMultiHashMap<'a> {
                 }
             }
         }
-        (best_diff != PAGE_SIZE).then_some(best_index)
+        (best_diff != PAGE_SIZE).then_some((best_diff, best_index))
     }
 }
 
@@ -684,25 +684,27 @@ fn compress(args: PhoenixCompressArgs) -> anyhow::Result<()> {
             continue;
         }
 
-        let mut compressed_buf = [0; PAGE_SIZE];
-        let compressed_page = compress_page(&page, &mut compressed_buf);
+        let nonzero_bytes = page.byte_diff(&ZERO_PAGE);
 
-        if let Some(best_match) = sample_map.best_match(page) {
+        if let Some((best_diff, best_match)) = sample_map.best_match(page)
+            && best_diff + 4 < nonzero_bytes
+        // 4 is the additional overhead of diffing
+        {
             let xor = page_xor(page, &sample_map.pages[best_match]);
 
-            let mut compressed_delta_buf = [0; PAGE_SIZE];
-            let compressed_diff = compress_page(&xor, &mut compressed_delta_buf);
-            if compressed_diff.len() < compressed_page.len() - 4 {
-                // 4 is the additional overhead
-                // of diffing
-                diff.push_diff_page(
-                    best_match,
-                    compressed_diff.method,
-                    &compressed_delta_buf[..compressed_diff.len() as usize],
-                );
-                continue;
-            }
+            let mut compressed_delta_buf = ZERO_PAGE;
+            let compressed_diff = compress_page(&xor, &mut compressed_delta_buf.0);
+            if compressed_diff.len() < nonzero_bytes - 4 {}
+            diff.push_diff_page(
+                best_match,
+                compressed_diff.method,
+                &compressed_delta_buf[..compressed_diff.len() as usize],
+            );
+            continue;
         }
+
+        let mut compressed_buf = ZERO_PAGE;
+        let compressed_page = compress_page(&page, &mut compressed_buf.0);
 
         diff.push_full_page(
             compressed_page.method,
