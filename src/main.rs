@@ -644,7 +644,7 @@ fn read_pages(mut file: File) -> anyhow::Result<Box<[AlignedPage]>> {
 }
 
 fn compress(args: PhoenixCompressArgs) -> anyhow::Result<()> {
-    let span = tracing::info_span!("file_reading");
+    let span = tracing::info_span!("read_parent_and_child_from_disk");
     let _guard = span.enter();
 
     let parent = read_pages(File::open(args.parent)?)?;
@@ -716,11 +716,22 @@ fn compress(args: PhoenixCompressArgs) -> anyhow::Result<()> {
     drop(_guard);
     drop(span);
 
-    let span = tracing::info_span!("diff_writing");
+    let span = tracing::info_span!("write_and_recompress_zstd");
     let _guard = span.enter();
 
-    let mut output = BufWriter::new(File::create(args.output)?);
-    diff.write(&mut output)?;
+    let mut compressed = Vec::new();
+    use zstd::Encoder;
+    let mut encoder = Encoder::new(&mut compressed, 0)?;
+    diff.write(&mut encoder)?;
+    encoder.finish()?;
+
+    drop(_guard);
+    drop(span);
+
+    let span = tracing::info_span!("write_diff_to_disk");
+    let _guard = span.enter();
+
+    BufWriter::new(File::create(args.output)?).write_all(&compressed)?;
 
     drop(_guard);
     drop(span);
@@ -729,12 +740,22 @@ fn compress(args: PhoenixCompressArgs) -> anyhow::Result<()> {
 }
 
 fn decompress(args: PhoenixDecompressArgs) -> anyhow::Result<()> {
-    let span = tracing::info_span!("diff_reading");
+    let span = tracing::info_span!("read_parent_and_diff_from_disk");
     let _guard = span.enter();
 
     let parent = read_pages(File::open(args.parent)?)?;
+    let mut compressed = Vec::new();
+    File::open(args.diff)?.read_to_end(&mut compressed)?;
+
+    drop(_guard);
+    drop(span);
+
+    let span = tracing::info_span!("decoding_zstd");
+    let _guard = span.enter();
+
+    use zstd::Decoder;
     let mut diff = Vec::new();
-    File::open(args.diff)?.read_to_end(&mut diff)?;
+    Decoder::new(compressed.as_slice())?.read_to_end(&mut diff)?;
 
     drop(_guard);
     drop(span);
@@ -763,7 +784,7 @@ fn decompress(args: PhoenixDecompressArgs) -> anyhow::Result<()> {
     drop(_guard);
     drop(span);
 
-    let span = tracing::info_span!("child_writing");
+    let span = tracing::info_span!("write_child_to_disk");
     let _guard = span.enter();
 
     File::create(args.output)?.write_all(bytemuck::cast_slice(child.as_slice()))?;

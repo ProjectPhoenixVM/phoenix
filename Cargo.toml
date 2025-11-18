@@ -13,6 +13,7 @@ rustc-hash = "2.1.1"
 tracing = "0.1.41"
 tracing-appender = "0.2.3"
 tracing-subscriber = "0.3.20"
+zstd = "0.13.3"
 
 [profile.profile]
 inherits = "release"
