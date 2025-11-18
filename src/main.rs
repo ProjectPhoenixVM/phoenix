@@ -716,22 +716,45 @@ fn compress(args: PhoenixCompressArgs) -> anyhow::Result<()> {
     drop(_guard);
     drop(span);
 
-    let span = tracing::info_span!("write_and_recompress_zstd");
-    let _guard = span.enter();
+    let output;
+    #[cfg(all(not(feature = "lz4_recompress"), not(feature = "zstd_recompress")))]
+    {
+        let span = tracing::info_span!("write_diff");
+        let _guard = span.enter();
 
-    let mut compressed = Vec::new();
-    use zstd::Encoder;
-    let mut encoder = Encoder::new(&mut compressed, 0)?;
-    diff.write(&mut encoder)?;
-    encoder.finish()?;
+        let mut compressed = Vec::new();
+        diff.write(&mut compressed)?;
+        output = compressed;
+    }
+    #[cfg(feature = "lz4_recompress")]
+    {
+        let span = tracing::info_span!("write_and_recompress_lz4");
+        let _guard = span.enter();
 
-    drop(_guard);
-    drop(span);
+        let mut compressed = Vec::new();
+        use lz4_flex::frame::FrameEncoder as Encoder;
+        let mut encoder = Encoder::new(&mut compressed);
+        diff.write(&mut encoder)?;
+        encoder.finish()?;
+        output = compressed;
+    }
+    #[cfg(feature = "zstd_recompress")]
+    {
+        let span = tracing::info_span!("write_and_recompress_zstd");
+        let _guard = span.enter();
+
+        let mut compressed = Vec::new();
+        use zstd::Encoder;
+        let mut encoder = Encoder::new(&mut compressed, 0)?;
+        diff.write(&mut encoder)?;
+        encoder.finish()?;
+        output = compressed;
+    }
 
     let span = tracing::info_span!("write_diff_to_disk");
     let _guard = span.enter();
 
-    BufWriter::new(File::create(args.output)?).write_all(&compressed)?;
+    BufWriter::new(File::create(args.output)?).write_all(&output)?;
 
     drop(_guard);
     drop(span);
@@ -750,15 +773,32 @@ fn decompress(args: PhoenixDecompressArgs) -> anyhow::Result<()> {
     drop(_guard);
     drop(span);
 
-    let span = tracing::info_span!("decoding_zstd");
-    let _guard = span.enter();
+    let diff;
 
-    use zstd::Decoder;
-    let mut diff = Vec::new();
-    Decoder::new(compressed.as_slice())?.read_to_end(&mut diff)?;
+    #[cfg(all(not(feature = "lz4_recompress"), not(feature = "zstd_recompress")))]
+    {
+        diff = compressed;
+    }
+    #[cfg(feature = "lz4_recompress")]
+    {
+        let span = tracing::info_span!("decoding_lz4");
+        let _guard = span.enter();
 
-    drop(_guard);
-    drop(span);
+        use lz4_flex::frame::FrameDecoder as Decoder;
+        let mut new_diff = Vec::new();
+        Decoder::new(compressed.as_slice()).read_to_end(&mut new_diff)?;
+        diff = new_diff;
+    }
+    #[cfg(feature = "zstd_recompress")]
+    {
+        let span = tracing::info_span!("decoding_zstd");
+        let _guard = span.enter();
+
+        use zstd::Decoder;
+        let mut new_diff = Vec::new();
+        Decoder::new(compressed.as_slice())?.read_to_end(&mut new_diff)?;
+        diff = new_diff;
+    }
 
     let span = tracing::info_span!("diff_metadata_construction");
     let _guard = span.enter();
