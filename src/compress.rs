@@ -60,7 +60,7 @@ impl BytePlacement {
     #[inline]
     fn compress<'a>(xor: &[u8], full_output: &'a mut [u8]) -> Result<&'a [u8]> {
         const CHUNK_SIZE: usize = 256;
-        let mut output = &mut full_output[..];
+        let mut output = &mut *full_output;
         let num_chunks = xor.len().div_ceil(CHUNK_SIZE);
         let mut head = output
             .split_off_mut(..num_chunks)
@@ -141,7 +141,7 @@ struct RunLength;
 impl RunLength {
     #[inline]
     fn compress<'a>(xor: &[u8], full_output: &'a mut [u8]) -> Result<&'a [u8]> {
-        let mut output = &mut full_output[..];
+        let mut output = &mut *full_output;
 
         let mut last = xor[0];
         let mut count = 1u8;
@@ -166,7 +166,7 @@ impl RunLength {
 
     #[inline]
     fn decompress(input: &mut &[u8], output: &mut [u8]) -> Result<()> {
-        let mut output = &mut output[..];
+        let mut output = &mut *output;
 
         while let Ok(&[data, count]) = read_const(input) {
             let count = (count as usize).min(output.len());
@@ -195,7 +195,7 @@ struct ZeroLength;
 impl ZeroLength {
     #[inline]
     fn compress<'a>(xor: &[u8], full_output: &'a mut [u8]) -> Result<&'a [u8]> {
-        let mut output = &mut full_output[..];
+        let mut output = &mut *full_output;
         let mut input = xor;
 
         while !input.is_empty() {
@@ -226,7 +226,7 @@ impl ZeroLength {
 
     #[inline]
     fn decompress(input: &mut &[u8], output: &mut [u8]) -> Result<()> {
-        let mut output = &mut output[..];
+        let mut output = &mut *output;
 
         loop {
             let &[num_zeros] = read_const(input)?;
@@ -288,7 +288,7 @@ impl<'a> PatternArray<'a> {
         let (xor_chunks, rem) = xor.as_chunks::<8>();
         assert!(rem.is_empty());
 
-        let mut output = &mut full_output[..];
+        let mut output = &mut *full_output;
 
         let mut data = [0u64; 512];
         let data_bytes = bytemuck::cast_slice_mut::<_, u8>(&mut data);
@@ -321,7 +321,7 @@ impl<'a> PatternArray<'a> {
             .enumerate()
         {
             if pattern == 0 {
-                output[i] = 0
+                output[i] = 0;
             } else {
                 let index = patterns.binary_search(&pattern).unwrap();
                 output[i] = index as u8 + 1;
@@ -354,15 +354,15 @@ impl<'a> PatternArray<'a> {
     }
 }
 
-/// Method:
-/// 0b_00_000_0xx: page is compressed with method XX
-/// 0b_00_0yy_1xx: page is compressed with pattern array
-///                   pattern array patterns are compressed with method XX
-///                   pattern array data is compressed with method YY
-/// 0b_zz_1yy_1xx: page is compressed with superpattern array
-///                   pattern array patterns are compressed with method XX
-///                   superpattern array patterns are compressed with method YY
-///                   pattern array data is compressed with method ZZ
+// Method:
+// 0b_00_000_0xx: page is compressed with method XX
+// 0b_00_0yy_1xx: page is compressed with pattern array
+//                   pattern array patterns are compressed with method XX
+//                   pattern array data is compressed with method YY
+// 0b_zz_1yy_1xx: page is compressed with superpattern array
+//                   pattern array patterns are compressed with method XX
+//                   superpattern array patterns are compressed with method YY
+//                   pattern array data is compressed with method ZZ
 #[derive(Debug, Clone, Copy)]
 pub struct CompressHeader {
     pub method: CompressionMethod,
@@ -370,7 +370,7 @@ pub struct CompressHeader {
 }
 
 impl CompressHeader {
-    pub fn len(&self) -> usize {
+    pub fn len(self) -> usize {
         self.len as _
     }
 }

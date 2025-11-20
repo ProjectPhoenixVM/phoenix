@@ -66,9 +66,10 @@ impl AlignedPage {
         type Vector = [u8; VECTOR_SIZE];
         const NUM_VECTORS: usize = PAGE_SIZE / VECTOR_SIZE;
         const {
-            if NUM_VECTORS > u8::MAX as usize {
-                panic!("Byte diff per-element sum may overflow u8");
-            }
+            assert!(
+                NUM_VECTORS > u8::MAX as usize,
+                "Byte diff per-element sum may overflow u8"
+            );
         }
 
         let (base_chunks, rem) = self.0.as_chunks::<VECTOR_SIZE>();
@@ -159,7 +160,7 @@ impl<'a> UniquePages<'a> {
     }
 }
 
-impl<'a> Index<PageIndex> for UniquePages<'a> {
+impl Index<PageIndex> for UniquePages<'_> {
     type Output = AlignedPage;
 
     fn index(&self, index: PageIndex) -> &Self::Output {
@@ -626,7 +627,7 @@ impl MemoryDiff {
 fn read_pages(mut file: File) -> anyhow::Result<Box<[AlignedPage]>> {
     let file_len = file.metadata()?.len();
     if !file_len.is_multiple_of(PAGE_SIZE as _) {
-        anyhow::bail!("File should be a multiple of {}", PAGE_SIZE);
+        anyhow::bail!("File should be a multiple of {PAGE_SIZE}");
     }
     let mut pages = Vec::with_capacity(file_len as usize / PAGE_SIZE);
     let mut buf = AlignedPage::default();
@@ -651,10 +652,10 @@ fn compress(args: PhoenixCompressArgs) -> anyhow::Result<()> {
     let child = read_pages(File::open(args.child)?)?;
 
     if parent.len() >= MAX_PAGE_INDEX as usize * PAGE_SIZE {
-        anyhow::bail!("Parent should not have more than {} pages", MAX_PAGE_INDEX);
+        anyhow::bail!("Parent should not have more than {MAX_PAGE_INDEX} pages");
     }
     if child.len() >= MAX_PAGE_INDEX as usize * PAGE_SIZE {
-        anyhow::bail!("Child should not have more than {} pages", MAX_PAGE_INDEX);
+        anyhow::bail!("Child should not have more than {MAX_PAGE_INDEX} pages");
     }
 
     drop(_guard);
@@ -803,7 +804,7 @@ fn decompress(args: PhoenixDecompressArgs) -> anyhow::Result<()> {
     let span = tracing::info_span!("diff_metadata_construction");
     let _guard = span.enter();
 
-    let mut diff = &diff[..];
+    let mut diff = &*diff;
     let diff = MemoryDiff::read(&mut diff)?;
 
     drop(_guard);
