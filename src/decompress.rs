@@ -1,30 +1,6 @@
-use std::{
-    borrow::Cow,
-    fs::File,
-    io::{Read, Write as _},
-};
+use std::borrow::Cow;
 
-use crate::{
-    PhoenixDecompressArgs,
-    diff::MemoryDiff,
-    page::{AlignedPage, read_pages},
-};
-
-struct Inputs {
-    parent: Box<[AlignedPage]>,
-    compressed_diff: Vec<u8>,
-}
-
-#[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
-fn read_from_disk(parent_file_name: String, diff_file_name: String) -> anyhow::Result<Inputs> {
-    let parent = read_pages(File::open(parent_file_name)?)?;
-    let mut compressed_diff = Vec::new();
-    File::open(diff_file_name)?.read_to_end(&mut compressed_diff)?;
-    Ok(Inputs {
-        parent,
-        compressed_diff,
-    })
-}
+use crate::{diff::MemoryDiff, page::AlignedPage};
 
 #[cfg(all(not(feature = "lz4_recompress"), not(feature = "zstd_recompress")))]
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
@@ -36,6 +12,7 @@ fn decompress_overall(compressed_diff: &[u8]) -> anyhow::Result<Cow<'_, [u8]>> {
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
 fn decompress_overall(compressed_diff: &[u8]) -> anyhow::Result<Cow<'_, [u8]>> {
     use lz4_flex::frame::FrameDecoder as Decoder;
+    use std::io::Read;
     let mut new_diff = Vec::new();
     Decoder::new(compressed_diff).read_to_end(&mut new_diff)?;
     Ok(Cow::Owned(new_diff))
@@ -44,6 +21,7 @@ fn decompress_overall(compressed_diff: &[u8]) -> anyhow::Result<Cow<'_, [u8]>> {
 #[cfg(feature = "zstd_recompress")]
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
 fn decompress_overall(compressed_diff: &[u8]) -> anyhow::Result<Cow<'_, [u8]>> {
+    use std::io::Read;
     use zstd::Decoder;
     let mut new_diff = Vec::new();
     Decoder::new(compressed_diff)?.read_to_end(&mut new_diff)?;
@@ -68,12 +46,6 @@ fn reconstruct_child(parent: &[AlignedPage], diff: &MemoryDiff) -> Box<[AlignedP
     child.into_boxed_slice()
 }
 
-fn write_child_to_disk(child: Box<[AlignedPage]>, file_name: String) -> anyhow::Result<()> {
-    File::create(file_name)?
-        .write_all(bytemuck::cast_slice(&child))
-        .map_err(Into::into)
-}
-
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
 pub fn decompress(
     parent: &[AlignedPage],
@@ -82,15 +54,4 @@ pub fn decompress(
     let diff = decompress_overall(compressed_diff)?;
     let diff = reconstruct_diff_metadata(&*diff)?;
     Ok(reconstruct_child(parent, &diff))
-}
-
-#[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
-pub fn decompress_files(args: PhoenixDecompressArgs) -> anyhow::Result<()> {
-    let Inputs {
-        parent,
-        compressed_diff,
-    } = read_from_disk(args.parent, args.diff)?;
-    let child = decompress(&parent, &compressed_diff)?;
-    write_child_to_disk(child, args.output)?;
-    Ok(())
 }

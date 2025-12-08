@@ -1,21 +1,14 @@
-use std::{
-    array::from_fn,
-    collections::hash_map::Entry,
-    fs::File,
-    io::{BufWriter, Write as _},
-    iter::zip,
-    ops::Index,
-};
+use std::{array::from_fn, collections::hash_map::Entry, iter::zip, ops::Index};
 
 use ahash::AHashMap;
 use rand::{Rng, SeedableRng as _};
 use rustc_hash::FxHashMap;
 
 use crate::{
-    ByteIndex, MAX_PAGE_INDEX, PageIndex, PhoenixCompressArgs,
+    ByteIndex, PageIndex,
     compression::compress_page,
     diff::{FULL_PAGE_FLAG, MemoryDiff},
-    page::{AlignedPage, PAGE_SIZE, ZERO_PAGE, page_xor, read_pages},
+    page::{AlignedPage, PAGE_SIZE, ZERO_PAGE, page_xor},
 };
 
 const SAMPLE_SIZE: usize = size_of::<SampleKey>();
@@ -164,24 +157,6 @@ impl<'a> SampledMultiHashMap<'a> {
     }
 }
 
-struct Inputs {
-    parent: Box<[AlignedPage]>,
-    child: Box<[AlignedPage]>,
-}
-
-#[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
-fn read_from_disk(parent_file_name: String, child_file_name: String) -> anyhow::Result<Inputs> {
-    let parent = read_pages(File::open(parent_file_name)?)?;
-    let child = read_pages(File::open(child_file_name)?)?;
-    if parent.len() > MAX_PAGE_INDEX as usize * PAGE_SIZE {
-        anyhow::bail!("Parent should not have more than {MAX_PAGE_INDEX} pages");
-    }
-    if child.len() > MAX_PAGE_INDEX as usize * PAGE_SIZE {
-        anyhow::bail!("Child should not have more than {MAX_PAGE_INDEX} pages");
-    }
-    Ok(Inputs { parent, child })
-}
-
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
 fn preprocess_parent(parent: &[AlignedPage]) -> SampledMultiHashMap<'_> {
     let pages = UniquePages::new(&parent);
@@ -264,23 +239,8 @@ fn recompress(diff: MemoryDiff) -> anyhow::Result<Vec<u8>> {
 }
 
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
-fn write_to_disk(data: Vec<u8>, file_name: String) -> anyhow::Result<()> {
-    BufWriter::new(File::create(file_name)?)
-        .write_all(&data)
-        .map_err(Into::into)
-}
-
-#[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
 pub fn compress(parent: &[AlignedPage], child: &[AlignedPage]) -> anyhow::Result<Vec<u8>> {
     let sample_map = preprocess_parent(&parent);
     let diff = compress_child(&sample_map, &child);
     recompress(diff)
-}
-
-#[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
-pub fn compress_files(args: PhoenixCompressArgs) -> anyhow::Result<()> {
-    let Inputs { parent, child } = read_from_disk(args.parent, args.child)?;
-    let compressed = compress(&parent, &child)?;
-    write_to_disk(compressed, args.output)?;
-    Ok(())
 }

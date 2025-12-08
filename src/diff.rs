@@ -299,6 +299,33 @@ impl MemoryDiff {
         self.base_pages.len() as _
     }
 
+    pub fn write(&self, mut writer: impl Write) -> io::Result<()> {
+        writer.write_all(&(self.base_pages.len() as PageIndex).to_be_bytes())?;
+        for base_page in &self.base_pages {
+            writer.write_all(&base_page.to_be_bytes())?;
+        }
+        self.compressed_diffs.write(&mut writer)?;
+        self.compressed_pages.write(&mut writer)?;
+        Ok(())
+    }
+
+    pub fn read(mut reader: impl Read) -> io::Result<Self> {
+        let num_pages = u32::from_be_bytes(read_const(&mut reader)?);
+        let mut base_pages = Vec::with_capacity(num_pages as usize);
+        for _ in 0..num_pages {
+            base_pages.push(u32::from_be_bytes(read_const(&mut reader)?));
+        }
+
+        let compressed_diffs = CompressedDiffs::read(&mut reader)?;
+        let compressed_pages = CompressedPages::read(&mut reader)?;
+
+        Ok(Self {
+            base_pages,
+            compressed_diffs,
+            compressed_pages,
+        })
+    }
+
     pub fn get_page<'a>(
         &'a self,
         parent: &'a [AlignedPage],
@@ -336,32 +363,5 @@ impl MemoryDiff {
             return Some(&*tmp_buf);
         }
         panic!("Invalid index");
-    }
-
-    pub fn write(&self, mut writer: impl Write) -> io::Result<()> {
-        writer.write_all(&(self.base_pages.len() as PageIndex).to_be_bytes())?;
-        for base_page in &self.base_pages {
-            writer.write_all(&base_page.to_be_bytes())?;
-        }
-        self.compressed_diffs.write(&mut writer)?;
-        self.compressed_pages.write(&mut writer)?;
-        Ok(())
-    }
-
-    pub fn read(mut reader: impl Read) -> io::Result<Self> {
-        let num_pages = u32::from_be_bytes(read_const(&mut reader)?);
-        let mut base_pages = Vec::with_capacity(num_pages as usize);
-        for _ in 0..num_pages {
-            base_pages.push(u32::from_be_bytes(read_const(&mut reader)?));
-        }
-
-        let compressed_diffs = CompressedDiffs::read(&mut reader)?;
-        let compressed_pages = CompressedPages::read(&mut reader)?;
-
-        Ok(Self {
-            base_pages,
-            compressed_diffs,
-            compressed_pages,
-        })
     }
 }

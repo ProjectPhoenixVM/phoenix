@@ -1,8 +1,6 @@
 use std::{
     array::from_fn,
-    fs::File,
     hash::{Hash, Hasher},
-    io::{self, Read as _},
     ops::{Deref, DerefMut},
 };
 
@@ -92,24 +90,4 @@ impl Hash for AlignedPage {
 
 pub fn page_xor(a: &AlignedPage, b: &AlignedPage) -> AlignedPage {
     AlignedPage(core::array::from_fn(|i| a.0[i] ^ b.0[i]))
-}
-
-pub fn read_pages(mut file: File) -> anyhow::Result<Box<[AlignedPage]>> {
-    let file_len = file.metadata()?.len();
-    if !file_len.is_multiple_of(PAGE_SIZE as _) {
-        anyhow::bail!("File should be a multiple of {PAGE_SIZE}");
-    }
-    let mut pages = Vec::with_capacity(file_len as usize / PAGE_SIZE);
-    let mut buf = AlignedPage::default();
-    loop {
-        let res = file.read_exact(&mut *buf);
-        if let Err(e) = res {
-            if e.kind() == io::ErrorKind::UnexpectedEof {
-                break;
-            }
-            return Err(e.into());
-        }
-        pages.push(buf);
-    }
-    Ok(pages.into_boxed_slice())
 }
