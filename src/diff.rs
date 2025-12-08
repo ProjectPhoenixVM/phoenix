@@ -326,6 +326,10 @@ impl MemoryDiff {
         })
     }
 
+    pub fn read_from_slice(bytes: &[u8]) -> io::Result<Self> {
+        Self::read(&mut &*bytes)
+    }
+
     pub fn get_page<'a>(
         &'a self,
         parent: &'a [AlignedPage],

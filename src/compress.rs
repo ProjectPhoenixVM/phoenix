@@ -1,7 +1,7 @@
-use std::{array::from_fn, collections::hash_map::Entry, iter::zip, ops::Index};
+use std::{array::from_fn, collections::hash_map::Entry, io, iter::zip, ops::Index};
 
 use ahash::AHashMap;
-use rand::{Rng, SeedableRng as _};
+use rand::Rng;
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -157,18 +157,29 @@ impl<'a> SampledMultiHashMap<'a> {
     }
 }
 
-#[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
-fn preprocess_parent(parent: &[AlignedPage]) -> SampledMultiHashMap<'_> {
-    let pages = UniquePages::new(&parent);
+pub struct CompressionBase<'a>(SampledMultiHashMap<'a>);
 
-    let mut rng = rand::rngs::StdRng::seed_from_u64(12345u64);
-    let sample_map = SampledMultiHashMap::new(&mut rng, pages);
+impl<'a> CompressionBase<'a> {
+    pub fn new(parent: &'a [AlignedPage], rng: impl Rng) -> Self {
+        preprocess_parent(parent, rng)
+    }
 
-    sample_map
+    pub fn compress_pages(&self, child_pages: &[AlignedPage]) -> MemoryDiff {
+        compress_child(self, child_pages)
+    }
 }
 
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
-fn compress_child(sample_map: &SampledMultiHashMap, child_pages: &[AlignedPage]) -> MemoryDiff {
+pub fn preprocess_parent(parent: &[AlignedPage], mut rng: impl Rng) -> CompressionBase<'_> {
+    let pages = UniquePages::new(&parent);
+    let sample_map = SampledMultiHashMap::new(&mut rng, pages);
+
+    CompressionBase(sample_map)
+}
+
+#[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
+pub fn compress_child(parent: &CompressionBase, child_pages: &[AlignedPage]) -> MemoryDiff {
+    let sample_map = &parent.0;
     let mut diff = MemoryDiff::default();
     for page in child_pages {
         if page.is_zero() {
@@ -210,17 +221,16 @@ fn compress_child(sample_map: &SampledMultiHashMap, child_pages: &[AlignedPage])
     diff
 }
 
-#[cfg(all(not(feature = "lz4_recompress"), not(feature = "zstd_recompress")))]
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
-fn recompress(diff: MemoryDiff) -> anyhow::Result<Vec<u8>> {
+pub fn write(diff: &MemoryDiff) -> io::Result<Vec<u8>> {
     let mut compressed = Vec::new();
     diff.write(&mut compressed)?;
     Ok(compressed)
 }
 
-#[cfg(feature = "zstd_recompress")]
+#[cfg(feature = "zstd")]
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
-fn recompress(diff: MemoryDiff) -> anyhow::Result<Vec<u8>> {
+pub fn write_zstd(diff: &MemoryDiff) -> io::Result<Vec<u8>> {
     let mut compressed = Vec::new();
     let mut encoder = zstd::Encoder::new(&mut compressed, 0)?;
     diff.write(&mut encoder)?;
@@ -228,19 +238,12 @@ fn recompress(diff: MemoryDiff) -> anyhow::Result<Vec<u8>> {
     Ok(compressed)
 }
 
+#[cfg(feature = "lz4")]
 #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
-#[cfg(feature = "lz4_recompress")]
-fn recompress(diff: MemoryDiff) -> anyhow::Result<Vec<u8>> {
+pub fn write_lz4(diff: &MemoryDiff) -> Result<Vec<u8>, lz4_flex::frame::Error> {
     let mut compressed = Vec::new();
     let mut encoder = lz4_flex::frame::FrameEncoder::new(&mut compressed);
     diff.write(&mut encoder)?;
     encoder.finish()?;
     Ok(compressed)
-}
-
-#[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
-pub fn compress(parent: &[AlignedPage], child: &[AlignedPage]) -> anyhow::Result<Vec<u8>> {
-    let sample_map = preprocess_parent(&parent);
-    let diff = compress_child(&sample_map, &child);
-    recompress(diff)
 }
