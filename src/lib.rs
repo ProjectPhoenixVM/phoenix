@@ -7,7 +7,7 @@ mod page;
 pub use crate::page::{AlignedPage, PAGE_SIZE};
 use std::io::{self, Read};
 
-pub use crate::{compress::compress, decompress::decompress};
+pub use crate::{compress::compress, decompress::decompress, diff::MemoryDiff};
 
 // at most address_space / PAGE_SIZE
 // supports address spaces up to 4 TiB (2^(32-2) * PAGE_SIZE bytes)
