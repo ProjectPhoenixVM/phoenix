@@ -330,6 +330,7 @@ impl MemoryDiff {
         Self::read(&mut &*bytes)
     }
 
+    #[must_use]
     pub fn get_page<'a>(
         &'a self,
         parent: &'a [AlignedPage],
