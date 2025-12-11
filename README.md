@@ -27,9 +27,11 @@ To load a snapshot using phoenix (Assume the base memory snapshot is `/path/to/f
 - in one terminal, run `sudo reset.bash && ./phoenix /tmp/uffd_control.socket /path/to/foobar` (this only loads the base snapshot into memory);
 - in another terminal run `start_firecracker.bash`;
 - in another terminal run `configure_phoenix.bash /path/to/foobar` (this loads and diff-compresses the derivitive snapshot), then `load_uffd.bash /path/to/foobar_snapshot && resume_vm.bash`
+- The handler will print to stderr on every page fault the amount of time it took to handle the fault
 
 You can also use a file-backed uffd handler (assume the same snapshot locations as for phoenix):
 - Build [the handler](https://github.com/ProjectPhoenixVM/File-UFFD-hander) with `cargo build --release` and copy the executable from `/target/release/uffd`
 - in one terminal, run `sudo reset.bash && ./uffd /tmp/firecracker_uffd.socket /path/to/foobar`;
 - in another terminal run `start_firecracker.bash`;
 - in another terminal run `load_uffd.bash /path/to/foobar_snapshot && resume_vm.bash`
+- The handler will print to stderr on every page fault the amount of time it took to handle the fault
