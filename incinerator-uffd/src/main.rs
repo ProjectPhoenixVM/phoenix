@@ -192,9 +192,12 @@ fn handle_request(request: &Request) -> anyhow::Result<Response> {
                 "Derivative snapshots should be the same size as their base"
             );
             let recompressed = info_span!("compress_deriv_snapshot").in_scope(|| {
-                let diff = COMPRESS_BASE.get().unwrap().compress_pages(&*deriv_pages);
+                let mut diff = COMPRESS_BASE.get().unwrap().compress_pages(&*deriv_pages);
                 match params.recompress_method {
-                    RecompressMode::None => CompressedDiff::Uncompressed(diff),
+                    RecompressMode::None => {
+                        diff.shrink_to_fit();
+                        CompressedDiff::Uncompressed(diff)
+                    }
                     RecompressMode::Zstd => CompressedDiff::Zstd(
                         incinerator::compress::write_zstd(&diff).expect("Encoding should succeed"),
                     ),

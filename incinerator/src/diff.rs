@@ -119,6 +119,12 @@ impl CompressedDiffs {
         })
     }
 
+    pub fn shrink_to_fit(&mut self) {
+        self.packed_metadata.shrink_to_fit();
+        self.address_high_bits.shrink_to_fit();
+        self.data.shrink_to_fit();
+    }
+
     fn get_raw_item(&self, key: u32) -> Option<(u16, u64)> {
         let &packed = self.packed_metadata.get(key as usize)?;
         let high_bits = match self.address_high_bits.binary_search(&key) {
@@ -234,6 +240,12 @@ impl CompressedPages {
         })
     }
 
+    pub fn shrink_to_fit(&mut self) {
+        self.packed_metadata.shrink_to_fit();
+        self.address_high_bits.shrink_to_fit();
+        self.data.shrink_to_fit();
+    }
+
     fn get_raw_item(&self, key: u32) -> Option<(u16, u32)> {
         let &packed = self.packed_metadata.get(key as usize)?;
         let high_bits = match self.address_high_bits.binary_search(&key) {
@@ -328,6 +340,12 @@ impl MemoryDiff {
 
     pub fn read_from_slice(bytes: &[u8]) -> io::Result<Self> {
         Self::read(&mut &*bytes)
+    }
+
+    pub fn shrink_to_fit(&mut self) {
+        self.base_pages.shrink_to_fit();
+        self.compressed_diffs.shrink_to_fit();
+        self.compressed_pages.shrink_to_fit();
     }
 
     #[must_use]
