@@ -2,7 +2,7 @@ use std::{
     collections::{HashMap, hash_map::Entry},
     convert::Infallible,
     fs::File,
-    io::{self, Read as _},
+    io::{self, Read as _, Write as _},
     os::unix::net::UnixListener,
     path::PathBuf,
     sync::{Arc, LazyLock, Mutex, OnceLock},
@@ -247,12 +247,14 @@ fn eager_fault_handler(socket: PathBuf, diff: Arc<OnceCompressedDiff>) -> Infall
 
         match event {
             userfaultfd::Event::Pagefault { .. } => {
+                let start = std::time::Instant::now();
                 for region in uffd_handler.mem_regions.clone() {
                     for page in (0..region.size).step_by(PAGE_SIZE) {
                         uffd_handler
                             .serve_pf((region.base_host_virt_addr as usize + page) as _, PAGE_SIZE);
                     }
                 }
+                eprintln!("elapsed: {} ns", start.elapsed().as_nanos());
             }
             _ => panic!("Unexpected event on userfaultfd"),
         }
@@ -266,6 +268,7 @@ fn lazy_fault_handler(socket: PathBuf, diff: Arc<OnceCompressedDiff>) -> Infalli
 
     runtime.install_panic_hook();
     runtime.run(|uffd_handler: &mut UffdHandler| {
+        let mut stderr = io::stderr().lock();
         let mut deferred_events = Vec::new();
 
         loop {
@@ -282,9 +285,11 @@ fn lazy_fault_handler(socket: PathBuf, diff: Arc<OnceCompressedDiff>) -> Infalli
                 // event (if the balloon device is enabled).
                 match event {
                     userfaultfd::Event::Pagefault { addr, .. } => {
+                        let start = std::time::Instant::now();
                         if !uffd_handler.serve_pf(addr.cast(), PAGE_SIZE) {
                             deferred_events.push(event);
                         }
+                        writeln!(stderr, "{}", start.elapsed().as_nanos()).unwrap();
                     }
                     userfaultfd::Event::Remove { start, end } => {
                         uffd_handler.unregister_range(start, end)
@@ -301,5 +306,6 @@ fn lazy_fault_handler(socket: PathBuf, diff: Arc<OnceCompressedDiff>) -> Infalli
                 break;
             }
         }
+        stderr.flush().unwrap();
     })
 }
