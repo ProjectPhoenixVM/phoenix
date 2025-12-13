@@ -234,6 +234,8 @@ Notice that the data array is just a 512-length array of bytes. It can be furthe
 
 The pattern array is also an array. It can also be recompressed. Applying `PatternArray` to the pattern array would never reduce its size because all 8-byte chunks in the pattern array are already unique (by definition). So Incinerator only tries the other four compression sub-formats.
 
+The compressed data for `PatternArray` is stored as a byte representing the number of patterns (the implicit zero pattern is not included, so this value is at most 254), followed by the compressed pattern array, followed by the compressed data array.
+
 `PatternArray` does not have a key; the `method` follows one of three different forms depending on whether 0, 1, or 2 levels of `PatternArray` are applied and depending on which sub-formats are used to compress the various sub-arrays.
 
 ### `method`
@@ -251,3 +253,5 @@ If two levels of `PatternArray` are applied, let the key used to compress the pa
 There are only 84 sub-formats, meaning an alternate encoding scheme could use only 7 bits, freeing one additiona bit to store address_high_bits
 
 All the lengths for the arrays in the serialized `MemoryDiff` could use fewer bits (ie. dd knows it has max size 2^30*2^12, why use 64 bits when 42 could do)
+
+Allow up to 256 patterns in the pattern array if the zero pattern is never used
