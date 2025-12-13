@@ -16,7 +16,7 @@ tracing-subscriber = "0.3.22"
 [features]
 default = []
 tracing = ["incinerator/tracing"]
+fixed_seed = []
 
 [profile.release]
 lto = "fat"
-codegen_units = 1

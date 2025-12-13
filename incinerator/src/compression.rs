@@ -47,9 +47,8 @@ fn dedup(slice: &mut [u64]) -> &mut [u64] {
 /// Stores a byte and its position in the output buffer
 /// The output buffer is initialized to zero
 /// The output buffer is split into 256-byte chunks so that all pointers can be u8
-/// Counts of nonzero bytes per chunk are one-biased so all chunks must have at least one placement
 ///
-/// [u8]: number of 1-biased placements in each 256-byte block of the range
+/// [u8]: number of placements in each 256-byte chunk of the range
 /// [
 ///      u8: pointer
 ///      u8: data
@@ -68,11 +67,10 @@ impl BytePlacement {
         let (chunks, tail) = xor.as_chunks::<CHUNK_SIZE>();
         for chunk in chunks {
             let num_nonzero = chunk.iter().filter(|b| **b != 0).count();
-            if num_nonzero == 0 {
-                write(&mut head, &[0])?;
-                write(&mut output, &[0, 0])?;
+            if num_nonzero == 256 {
+                return Err("Some chunk contained no zero bytes");
             } else {
-                write(&mut head, &[(num_nonzero - 1) as u8])?;
+                write(&mut head, &[num_nonzero as u8])?;
                 for (pos, &byte) in chunk.iter().enumerate() {
                     if byte != 0 {
                         write(&mut output, &[pos as u8, byte])?;
@@ -82,15 +80,11 @@ impl BytePlacement {
         }
         if !tail.is_empty() {
             let tail_num_nonzero = tail.iter().filter(|b| **b != 0).count();
-            if tail_num_nonzero == 0 {
-                write(&mut head, &[0])?;
-                write(&mut output, &[0, 0])?;
-            } else {
-                write(&mut head, &[(tail_num_nonzero - 1) as u8])?;
-                for (pos, &byte) in tail.iter().enumerate() {
-                    if byte != 0 {
-                        write(&mut output, &[pos as u8, byte])?;
-                    }
+            assert!(tail_num_nonzero < 256);
+            write(&mut head, &[tail_num_nonzero as u8])?;
+            for (pos, &byte) in tail.iter().enumerate() {
+                if byte != 0 {
+                    write(&mut output, &[pos as u8, byte])?;
                 }
             }
         }
@@ -107,7 +101,7 @@ impl BytePlacement {
         let header = input.split_off(..num_chunks).ok_or("Not enough input")?;
         let (chunks, tail) = output.as_chunks_mut::<CHUNK_SIZE>();
         for (chunk, num_nonzero) in chunks.iter_mut().zip(header.iter()) {
-            let num_nonzero = *num_nonzero as usize + 1;
+            let num_nonzero = *num_nonzero as usize;
             if input.len() < num_nonzero * 2 {
                 return Err("Input data is cut short");
             }
@@ -117,7 +111,7 @@ impl BytePlacement {
             }
         }
         if !tail.is_empty() {
-            let num_nonzero = *header.last().unwrap() as usize + 1;
+            let num_nonzero = *header.last().unwrap() as usize;
             if input.len() < num_nonzero * 2 {
                 return Err("Input data is cut short");
             }
@@ -134,7 +128,7 @@ impl BytePlacement {
 ///
 /// [
 ///      u8: data
-///      u8: count
+///      u8: count - 1
 /// ]
 struct RunLength;
 
@@ -144,7 +138,7 @@ impl RunLength {
         let mut output = &mut *full_output;
 
         let mut last = xor[0];
-        let mut count = 1u8;
+        let mut count = 0u8;
         for byte in xor[1..].iter().copied() {
             if byte == last {
                 if count == 255 {
@@ -156,7 +150,7 @@ impl RunLength {
             }
             write(&mut output, &[last, count])?;
             last = byte;
-            count = 1;
+            count = 0;
         }
         write(&mut output, &[last, count])?;
         let output_len = output.len();
@@ -169,7 +163,7 @@ impl RunLength {
         let mut output = &mut *output;
 
         while let Ok(&[data, count]) = read_const(input) {
-            let count = (count as usize).min(output.len());
+            let count = (count as usize + 1).min(output.len());
             let buf = output
                 .split_off_mut(..count)
                 .ok_or("Ran out of output buffer")?;

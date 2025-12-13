@@ -98,8 +98,14 @@ mod compress {
     #[cfg_attr(feature = "tracing", tracing::instrument(skip_all))]
     pub fn compress_files(args: PhoenixCompressArgs) -> anyhow::Result<()> {
         let Inputs { parent, child } = read_from_disk(args.parent, args.child)?;
-        let compressed =
-            incinerator::CompressBase::new(&parent, rand::rng()).compress_pages(&child);
+        #[cfg(feature = "fixed_seed")]
+        let rng = {
+            use rand::{SeedableRng, rngs::StdRng};
+            StdRng::seed_from_u64(0x12345)
+        };
+        #[cfg(not(feature = "fixed_seed"))]
+        let rng = rand::rng();
+        let compressed = incinerator::CompressBase::new(&parent, rng).compress_pages(&child);
         let written = match args.recompress_mode.unwrap_or_default() {
             RecompressMode::None => incinerator::compress::write(&compressed)?,
             RecompressMode::Zstd => incinerator::compress::write_zstd(&compressed)?,
