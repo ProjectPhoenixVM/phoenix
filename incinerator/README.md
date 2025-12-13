@@ -47,7 +47,9 @@ If many pages resemble $Q$, then many will share its samples. In this case, Inci
 Across all regimes, the sampling scheme reliably returns a near-optimal match whenever one exists.
 
 ## `MemoryDiff`
-The result of diff compressing a snapshot is a `MemoryDiff`. `MemoryDiff` can be quickly serialized and deserialized; it consists of only arrays of bytes and integers.
+The result of diff compressing a snapshot is a `MemoryDiff`. `MemoryDiff` has a method `get_page` which takes as input the base snapshot and the index of an arbitrary derivative page and returns the value of the derivative page.
+
+`MemoryDiff` can be quickly serialized and deserialized; it consists of only arrays of bytes and integers.
 
 Let $n$ be the number of pages in a memory snapshot. For the common case of 128 MiB-size snapshots, $n = 128 MiB / 4 KiB = 32768 = 2^{15}$.
 
